@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   createControlledMonitorFork,
+  createExecutableControlledMonitorLoop,
   inspectControlledMonitorFork,
 } from "../src/p0-bridge/controlled-monitor-fork.mjs";
 import {
@@ -42,10 +43,10 @@ function message({
   };
 }
 
-async function temporaryStorage(t) {
+async function temporaryProjectRoot(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "persona-p0-bridge-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  return path.join(root, ".openclaw", "bridge");
+  return root;
 }
 
 async function readReceiptLines(receiptPath) {
@@ -76,9 +77,9 @@ async function createConfiguredBridge(t, receiver, verifySource = enabledSource)
 }
 
 test("approved text reaches the local Runtime receipt boundary", async (t) => {
-  const storageRoot = await temporaryStorage(t);
+  const projectRoot = await temporaryProjectRoot(t);
   const receiver = createLocalRuntimeReceiver({
-    storageRoot,
+    projectRoot,
     approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
     now: () => new Date("2026-09-16T00:00:00.000Z"),
   });
@@ -103,9 +104,9 @@ test("approved text reaches the local Runtime receipt boundary", async (t) => {
 });
 
 test("unknown contacts are handled without a local receipt", async (t) => {
-  const storageRoot = await temporaryStorage(t);
+  const projectRoot = await temporaryProjectRoot(t);
   const receiver = createLocalRuntimeReceiver({
-    storageRoot,
+    projectRoot,
     approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
   });
   await createConfiguredBridge(t, receiver);
@@ -160,9 +161,9 @@ test("version mismatch rejects the seam before the receiver can run", async (t) 
 });
 
 test("duplicates are scoped by account and are recorded only once", async (t) => {
-  const storageRoot = await temporaryStorage(t);
+  const projectRoot = await temporaryProjectRoot(t);
   const receiver = createLocalRuntimeReceiver({
-    storageRoot,
+    projectRoot,
     approvedContacts: [
       { accountId: "account-a", contactId: "contact-a" },
       { accountId: "account-b", contactId: "contact-b" },
@@ -184,9 +185,9 @@ test("duplicates are scoped by account and are recorded only once", async (t) =>
 });
 
 test("media stores metadata only and never persists a context token or URL", async (t) => {
-  const storageRoot = await temporaryStorage(t);
+  const projectRoot = await temporaryProjectRoot(t);
   const receiver = createLocalRuntimeReceiver({
-    storageRoot,
+    projectRoot,
     approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
   });
   await createConfiguredBridge(t, receiver);
@@ -206,10 +207,10 @@ test("media stores metadata only and never persists a context token or URL", asy
 });
 
 test("a persistence failure leaves the idempotency key retryable", async (t) => {
-  const storageRoot = await temporaryStorage(t);
+  const projectRoot = await temporaryProjectRoot(t);
   let fail = true;
   const receiver = createLocalRuntimeReceiver({
-    storageRoot,
+    projectRoot,
     approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
     appendReceipt: async (receiptPath, line) => {
       if (fail) throw new Error("synthetic disk failure");
@@ -231,6 +232,65 @@ test("a persistence failure leaves the idempotency key retryable", async (t) => 
   assert.equal((await readReceiptLines(receiver.receiptPath)).length, 1);
 });
 
+test("a symlinked project state directory cannot redirect Runtime receipts", async (t) => {
+  const projectRoot = await temporaryProjectRoot(t);
+  const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), "persona-p0-external-"));
+  t.after(() => fs.rm(externalRoot, { recursive: true, force: true }));
+  await fs.symlink(externalRoot, path.join(projectRoot, ".openclaw"));
+  const receiver = createLocalRuntimeReceiver({
+    projectRoot,
+    approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
+  });
+  await createConfiguredBridge(t, receiver);
+
+  const result = await processP0WeixinInbound({ accountId: "account-a", full: message({ id: 109 }) });
+  assert.deepEqual(result, {
+    handled: true,
+    state: "failed",
+    reason: "runtime-storage-unavailable",
+    retryable: true,
+  });
+  assert.deepEqual(await fs.readdir(externalRoot), []);
+});
+
+test("a failed initial storage check can recover and retry on the same receiver", async (t) => {
+  const projectRoot = await temporaryProjectRoot(t);
+  const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), "persona-p0-external-"));
+  t.after(() => fs.rm(externalRoot, { recursive: true, force: true }));
+  const linkedState = path.join(projectRoot, ".openclaw");
+  await fs.symlink(externalRoot, linkedState);
+  const receiver = createLocalRuntimeReceiver({
+    projectRoot,
+    approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
+  });
+  await createConfiguredBridge(t, receiver);
+
+  const first = await processP0WeixinInbound({ accountId: "account-a", full: message({ id: 110 }) });
+  await fs.unlink(linkedState);
+  const retry = await processP0WeixinInbound({ accountId: "account-a", full: message({ id: 110 }) });
+  assert.equal(first.state, "failed");
+  assert.equal(retry.state, "accepted");
+  assert.equal((await readReceiptLines(receiver.receiptPath)).length, 1);
+});
+
+test("a receipt-file symlink is rejected before a write can escape", async (t) => {
+  const projectRoot = await temporaryProjectRoot(t);
+  const externalReceipt = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "persona-p0-external-")), "receipt.ndjson");
+  t.after(() => fs.rm(path.dirname(externalReceipt), { recursive: true, force: true }));
+  const receiver = createLocalRuntimeReceiver({
+    projectRoot,
+    approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
+  });
+  await fs.mkdir(receiver.storageRoot, { recursive: true });
+  await fs.writeFile(externalReceipt, "external-sentinel\n", "utf8");
+  await fs.symlink(externalReceipt, receiver.receiptPath);
+  await createConfiguredBridge(t, receiver);
+
+  const result = await processP0WeixinInbound({ accountId: "account-a", full: message({ id: 111 }) });
+  assert.equal(result.state, "failed");
+  assert.equal(await fs.readFile(externalReceipt, "utf8"), "external-sentinel\n");
+});
+
 test("the controlled overlay continues before the native message processor", async () => {
   const source = [
     "import type { PluginRuntime } from \"openclaw/plugin-sdk/core\";",
@@ -246,9 +306,10 @@ test("the controlled overlay continues before the native message processor", asy
   ].join("\n");
   const overlay = createControlledMonitorFork(source);
   assert.deepEqual(inspectControlledMonitorFork(overlay).ok, true);
+  assert.throws(() => createExecutableControlledMonitorLoop(source), /monitor-source-hash-mismatch/);
 });
 
-test("the audited installed source has the locked pre-default overlay point", { skip: !pluginRoot || !openclawRoot }, async () => {
+test("the audited installed source executes the generated bridge call before native processing", { skip: !pluginRoot || !openclawRoot }, async () => {
   const lock = await verifyPinnedWeixinSource({ pluginRoot, openclawRoot });
   assert.equal(lock.enabled, true, lock.reason);
   assert.equal(lock.monitorSha256, PINNED_WEIXIN_SOURCE.plugin.monitorSha256);
@@ -256,6 +317,27 @@ test("the audited installed source has the locked pre-default overlay point", { 
   const source = await fs.readFile(lock.monitorPath, "utf8");
   const overlay = createControlledMonitorFork(source);
   assert.deepEqual(inspectControlledMonitorFork(overlay).ok, true);
+  const executeLoop = createExecutableControlledMonitorLoop(source);
+  let bridgeCalls = 0;
+  let nativeCalls = 0;
+  const result = await executeLoop(
+    [message({ id: 112 })],
+    { info: () => {}, error: () => {} },
+    undefined,
+    "account-a",
+    async ({ accountId, full }) => {
+      bridgeCalls += 1;
+      assert.equal(accountId, "account-a");
+      assert.equal(full.message_id, 112);
+      return { handled: true, state: "accepted" };
+    },
+    async () => {
+      nativeCalls += 1;
+    },
+  );
+  assert.equal(result, undefined);
+  assert.equal(bridgeCalls, 1);
+  assert.equal(nativeCalls, 0);
 });
 
 test("source verifier rejects a mismatched plugin fixture", async (t) => {

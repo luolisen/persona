@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -50,11 +51,37 @@ function normalizeInbound({ accountId, full }) {
   };
 }
 
-async function ensureSafeDirectory(directory) {
-  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+async function ensureDirectoryNotSymlink(directory) {
   const stat = await fs.lstat(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw new Error("runtime-storage-unsafe");
+  }
+}
+
+async function ensureSafeStoragePath(projectRoot) {
+  await ensureDirectoryNotSymlink(projectRoot);
+  let current = projectRoot;
+  for (const segment of [".openclaw", "bridge"]) {
+    current = path.join(current, segment);
+    try {
+      await fs.mkdir(current, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    await ensureDirectoryNotSymlink(current);
+  }
+  return current;
+}
+
+async function appendReceiptNoFollow(receiptPath, line) {
+  const flags = fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT | fsConstants.O_NOFOLLOW;
+  const handle = await fs.open(receiptPath, flags, 0o600);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) throw new Error("receipt-file-unsafe");
+    await handle.writeFile(line, "utf8");
+  } finally {
+    await handle.close();
   }
 }
 
@@ -86,13 +113,13 @@ async function readReceipts(receiptPath) {
  * capability.
  */
 export function createLocalRuntimeReceiver({
-  storageRoot,
+  projectRoot,
   approvedContacts,
   now = () => new Date(),
-  appendReceipt = (receiptPath, line) => fs.appendFile(receiptPath, line, { encoding: "utf8", mode: 0o600 }),
+  appendReceipt = appendReceiptNoFollow,
 }) {
-  if (typeof storageRoot !== "string" || !path.isAbsolute(storageRoot)) {
-    throw new TypeError("storageRoot must be an absolute path");
+  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
+    throw new TypeError("projectRoot must be an absolute path");
   }
   if (!Array.isArray(approvedContacts)) {
     throw new TypeError("approvedContacts must be an array");
@@ -106,19 +133,30 @@ export function createLocalRuntimeReceiver({
     approved.add(pairKey(accountId, contactId));
   }
 
+  const resolvedProjectRoot = path.resolve(projectRoot);
+  const storageRoot = path.join(resolvedProjectRoot, ".openclaw", "bridge");
   const receiptPath = path.join(storageRoot, "receipts.ndjson");
   const inFlight = new Set();
   let seen;
+  let initialized = false;
   let initialize;
 
   async function ensureInitialized() {
+    if (initialized) return;
     if (!initialize) {
       initialize = (async () => {
-        await ensureSafeDirectory(storageRoot);
+        const verifiedRoot = await ensureSafeStoragePath(resolvedProjectRoot);
+        if (verifiedRoot !== storageRoot) throw new Error("runtime-storage-unsafe");
         seen = await readReceipts(receiptPath);
       })();
     }
-    await initialize;
+    try {
+      await initialize;
+      initialized = true;
+    } catch (error) {
+      initialize = null;
+      throw error;
+    }
   }
 
   return {
@@ -160,6 +198,8 @@ export function createLocalRuntimeReceiver({
         media: inbound.media,
       };
       try {
+        const verifiedRoot = await ensureSafeStoragePath(resolvedProjectRoot);
+        if (verifiedRoot !== storageRoot) throw new Error("runtime-storage-unsafe");
         await appendReceipt(receiptPath, `${JSON.stringify(receipt)}\n`);
         seen.add(idempotencyKey);
         return { handled: true, state: "accepted", idempotencyKey, receipt };

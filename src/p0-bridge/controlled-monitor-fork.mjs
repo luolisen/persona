@@ -1,4 +1,4 @@
-import { PINNED_WEIXIN_SOURCE, locateMonitorSeam } from "./upstream-lock.mjs";
+import { PINNED_WEIXIN_SOURCE, locateMonitorSeam, sha256 } from "./upstream-lock.mjs";
 
 const IMPORT_MARKER = 'import { processP0WeixinInbound } from "./p0-weixin-inbound-bridge.js";\n';
 const IMPORT_ANCHOR = "const DEFAULT_LONG_POLL_TIMEOUT_MS";
@@ -44,4 +44,31 @@ export function inspectControlledMonitorFork(monitorSource) {
     continueAfterBridge,
     nativeProcess,
   };
+}
+
+/**
+ * Execute the generated per-message loop from the locked monitor source. The
+ * original processor stays in the generated loop after `continue`, allowing a
+ * synthetic test to prove that the actual generated call chain cannot reach it.
+ */
+export function createExecutableControlledMonitorLoop(monitorSource) {
+  if (sha256(monitorSource) !== PINNED_WEIXIN_SOURCE.plugin.monitorSha256) {
+    throw new Error("monitor-source-hash-mismatch");
+  }
+  const overlay = createControlledMonitorFork(monitorSource);
+  const loopStart = overlay.indexOf("      for (const full of list) {");
+  const loopEndMarker = "\n      }\n    } catch";
+  const loopEnd = overlay.indexOf(loopEndMarker, loopStart);
+  if (loopStart < 0 || loopEnd < 0) throw new Error("monitor-loop-extraction-failed");
+  const loop = overlay.slice(loopStart, loopEnd + "\n      }".length);
+  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+  return new AsyncFunction(
+    "list",
+    "aLog",
+    "setStatus",
+    "accountId",
+    "processP0WeixinInbound",
+    "processOneMessage",
+    loop,
+  );
 }

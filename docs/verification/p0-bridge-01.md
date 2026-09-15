@@ -30,7 +30,7 @@ P0_WEIXIN_PLUGIN_ROOT=<only-source-plugin-root> \
 P0_OPENCLAW_ROOT=<only-source-host-root> npm test
 ```
 
-结果：17/17 通过，无跳过、无失败。
+结果：20/20 通过，无跳过、无失败。
 
 ```text
 node scripts/check-p0-weixin-inbound-seam.mjs \
@@ -48,5 +48,7 @@ node scripts/check-p0-weixin-inbound-seam.mjs \
 - 重复键由账号与消息标识共同计算；同消息标识在不同账号下独立接收。
 - 媒体只保存类型元数据；`context_token` 和媒体 URL 不会写入 receipt。
 - receipt 写入失败不会登记幂等键，同一消息可在恢复后重试。
+- `.openclaw` 父目录或 receipt 文件是符号链接时，Runtime 拒绝写入；初始化失败不会永久缓存，修正本地路径后同一 receiver 可以重试。
+- 测试从锁定版本的真实 `monitor.ts` 生成受控 loop 并执行一条合成消息：bridge 调用一次，原始 `processOneMessage` 零调用。
 
 这是合成源码兼容与行为验证，不是微信账号或真实通道验收。后续若要准备或加载受控 fork，必须重新验证候选源码并获得单独授权。
