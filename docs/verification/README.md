@@ -9,6 +9,7 @@
 | Python | 已检查 | 3.14.7；尚未做项目依赖兼容性测试 |
 | 独立实例 | 待开发验证 | 必须独立配置、状态、插件、工作区、日志与端口 |
 | 微信能力 | 待实测 | 本机 docs/channels/wechat.md 描述腾讯外部插件，不代表本机已安装或真实可用 |
+| P0 微信入站桥接 | 本地合成已验证 | `@tencent-weixin/openclaw-weixin@2.4.6` / `openclaw@2026.7.1-2` 的前置 monitor overlay、项目内 Runtime receipt 与失败关闭测试；见 `p0-bridge-01.md` |
 | 模型 API | 待实测 | Agnes、DeepSeek 均未确认接入参数与账户 |
 | OpenViking | Design Assumption | Memory 阶段前验证 |
 | License | 待核验 | 不将原始设计中的许可证声明作为已确认结论 |
