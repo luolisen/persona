@@ -1,0 +1,49 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "__PERSONA_ROOT__/.openclaw/workspace",
+      "skipBootstrap": true,
+      "heartbeat": {
+        "every": "0m"
+      },
+      "elevatedDefault": "off"
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "port": 19889,
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "__PERSONA_GATEWAY_TOKEN__"
+    },
+    "channelHealthCheckMinutes": 0
+  },
+  "logging": {
+    "level": "info",
+    "file": "__PERSONA_ROOT__/.openclaw/logs/gateway.log",
+    "consoleLevel": "warn",
+    "redactSensitive": "tools"
+  },
+  "tools": {
+    "elevated": {
+      "enabled": false
+    }
+  },
+  "plugins": {
+    "enabled": true,
+    "deny": [
+      "active-memory",
+      "memory-core",
+      "memory-wiki",
+      "bonjour",
+      "browser",
+      "canvas"
+    ],
+    "load": {
+      "paths": [
+        "__PERSONA_ROOT__/.openclaw/plugins"
+      ]
+    }
+  }
+}

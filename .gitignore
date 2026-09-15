@@ -1,0 +1,6 @@
+# Project-local OpenClaw runtime, state, credentials, sessions, plugin installs,
+# logs, workspace, and verification artifacts. Never commit any of these.
+.openclaw/
+
+# Node package-manager diagnostics.
+npm-debug.log*

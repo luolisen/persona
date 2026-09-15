@@ -1,0 +1,15 @@
+{
+  "name": "zhaoying-persona-phase0",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Phase 0 isolation tooling for the Zhaoying OpenClaw instance",
+  "engines": {
+    "node": ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "openclaw:bootstrap": "./scripts/openclaw-bootstrap.sh",
+    "openclaw:check": "./scripts/openclaw-isolation-check.sh",
+    "openclaw:install": "./scripts/openclaw-install.sh"
+  }
+}
