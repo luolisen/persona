@@ -309,7 +309,7 @@ test("the controlled overlay continues before the native message processor", asy
   assert.throws(() => createExecutableControlledMonitorLoop(source), /monitor-source-hash-mismatch/);
 });
 
-test("the audited installed source executes the generated bridge call before native processing", { skip: !pluginRoot || !openclawRoot }, async () => {
+test("the audited generated monitor loop reaches Runtime and closes bridge exceptions", { skip: !pluginRoot || !openclawRoot }, async (t) => {
   const lock = await verifyPinnedWeixinSource({ pluginRoot, openclawRoot });
   assert.equal(lock.enabled, true, lock.reason);
   assert.equal(lock.monitorSha256, PINNED_WEIXIN_SOURCE.plugin.monitorSha256);
@@ -318,25 +318,54 @@ test("the audited installed source executes the generated bridge call before nat
   const overlay = createControlledMonitorFork(source);
   assert.deepEqual(inspectControlledMonitorFork(overlay).ok, true);
   const executeLoop = createExecutableControlledMonitorLoop(source);
-  let bridgeCalls = 0;
+  const projectRoot = await temporaryProjectRoot(t);
+  const receiver = createLocalRuntimeReceiver({
+    projectRoot,
+    approvedContacts: [{ accountId: "account-a", contactId: "contact-a" }],
+  });
+  const seam = await createVersionLockedWeixinMonitorSeam({ pluginRoot, openclawRoot, receiver });
+  configureP0WeixinInboundBridge(seam);
+  t.after(resetP0WeixinInboundBridge);
+
+  const bridgeResults = [];
   let nativeCalls = 0;
-  const result = await executeLoop(
+  const bridgeEntry = async (input) => {
+    const result = await processP0WeixinInbound(input);
+    bridgeResults.push(result);
+    return result;
+  };
+  await executeLoop(
     [message({ id: 112 })],
     { info: () => {}, error: () => {} },
     undefined,
     "account-a",
-    async ({ accountId, full }) => {
-      bridgeCalls += 1;
-      assert.equal(accountId, "account-a");
-      assert.equal(full.message_id, 112);
-      return { handled: true, state: "accepted" };
-    },
+    bridgeEntry,
     async () => {
       nativeCalls += 1;
     },
   );
-  assert.equal(result, undefined);
-  assert.equal(bridgeCalls, 1);
+  assert.equal(bridgeResults[0].state, "accepted");
+  assert.equal((await readReceiptLines(receiver.receiptPath)).length, 1);
+  assert.equal(nativeCalls, 0);
+
+  const throwingSeam = await createVersionLockedWeixinMonitorSeam({
+    pluginRoot,
+    openclawRoot,
+    receiver: { receive: async () => { throw new Error("synthetic Runtime fault"); } },
+  });
+  configureP0WeixinInboundBridge(throwingSeam);
+  await executeLoop(
+    [message({ id: 113 })],
+    { info: () => {}, error: () => {} },
+    undefined,
+    "account-a",
+    bridgeEntry,
+    async () => {
+      nativeCalls += 1;
+    },
+  );
+  assert.equal(bridgeResults[1].state, "failed");
+  assert.equal(bridgeResults[1].reason, "bridge-exception");
   assert.equal(nativeCalls, 0);
 });
 

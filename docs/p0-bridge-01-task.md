@@ -37,7 +37,7 @@
 
 ## 证明边界
 
-测试会同时验证两件事：项目 adapter 的合成行为，以及锁定版本的真实插件源码生成的 monitor 循环确实调用 bridge 且零次调用原始 `processOneMessage`。它不声称已运行真实微信账号或完整上游网关；真实通道验收仍需要后续单独授权。
+测试会同时验证两件事：项目 adapter 的合成行为，以及锁定版本的真实插件源码生成的 monitor 循环确实经 fork entry 调用版本锁 bridge、写入 Runtime receipt，并在 Runtime 抛错时零次调用原始 `processOneMessage`。它不声称已运行真实微信账号或完整上游网关；真实通道验收仍需要后续单独授权。
 
 ## 非目标
 

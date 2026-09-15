@@ -49,6 +49,6 @@ node scripts/check-p0-weixin-inbound-seam.mjs \
 - 媒体只保存类型元数据；`context_token` 和媒体 URL 不会写入 receipt。
 - receipt 写入失败不会登记幂等键，同一消息可在恢复后重试。
 - `.openclaw` 父目录或 receipt 文件是符号链接时，Runtime 拒绝写入；初始化失败不会永久缓存，修正本地路径后同一 receiver 可以重试。
-- 测试从锁定版本的真实 `monitor.ts` 生成受控 loop 并执行一条合成消息：bridge 调用一次，原始 `processOneMessage` 零调用。
+- 测试从锁定版本的真实 `monitor.ts` 生成受控 loop 并执行合成消息：经 fork entry 和版本锁 bridge 写入 Runtime receipt，原始 `processOneMessage` 零调用；Runtime 抛错分支同样零调用。
 
 这是合成源码兼容与行为验证，不是微信账号或真实通道验收。后续若要准备或加载受控 fork，必须重新验证候选源码并获得单独授权。
