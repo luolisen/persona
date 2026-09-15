@@ -34,3 +34,12 @@
 - 首步：只读核对本文件、上述资料和源代码，报告差异与实施第一步；主 Work 登记后再下发实现指令。
 - 代码：本次整理后建立本地提交，后续任务先获取此提交，禁止从初始 README 开始重写。禁止 push。
 - 主 Work 交接提醒评估：当前只轮换开发任务，主审上下文仍连续，无已知压缩计数或已核实混淆；暂不另建议交接主任务，下一实质阶段或真实压缩点复查。
+
+## P0-BRIDGE-01 接手进度
+
+- 状态：本地提交 `1209d21` 经主审发现存储符号链接、初始化重试和生成调用链证据缺口；前两项已在 `adc580a` 修复，生成的真实 monitor loop → fork entry → 版本锁 bridge → Runtime receipt 及异常失败关闭证据已补齐，准备提交后重新交主 Work 审计。
+- 开发工作树：`/Users/alan/.codex/worktrees/60e4/persona`。
+- 开发分支：`codex/p0-bridge-01`，基于本地已验收提交 `061b2b3`。
+- 首个实际动作：已创建本切片的有界任务与验收说明 `docs/p0-bridge-01-task.md`；随后实施版本锁定的微信监控入口适配、项目内 Runtime 接收边界及无网络合成测试。
+- 验证：`npm test` 在锁定源码环境下 20/20 通过；`scripts/check-p0-weixin-inbound-seam.mjs` 已确认 `@tencent-weixin/openclaw-weixin@2.4.6` / `openclaw@2026.7.1-2`、两个源码哈希及 `processOneMessage` 前的 overlay 位置。详见 `docs/verification/p0-bridge-01.md`。
+- 交付规则：本切片通过本地测试后创建本地提交，交由主 Work 审计；主 Work 负责后续云端合并闭环。

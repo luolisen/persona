@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "check:p0-bridge": "node scripts/check-p0-weixin-inbound-seam.mjs",
     "openclaw:bootstrap": "./scripts/openclaw-bootstrap.sh",
     "openclaw:check": "./scripts/openclaw-isolation-check.sh",
     "openclaw:install": "./scripts/openclaw-install.sh"
